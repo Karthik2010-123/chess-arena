@@ -1,213 +1,109 @@
-* {
-  box-sizing: border-box;
-}
+'use strict';
 
-:root {
-  font-family: Inter, 'Segoe UI', sans-serif;
-  color: #f3f5ff;
-  background: #0d1321;
-  line-height: 1.5;
-  font-weight: 400;
-}
+const { Chess } = require('chess.js');
 
-body {
-  margin: 0;
-  min-width: 320px;
-  min-height: 100vh;
-  background:
-    radial-gradient(circle at top, rgba(63, 121, 255, 0.2), transparent 35%),
-    linear-gradient(135deg, #0d1321, #111827 40%, #0f172a);
-}
+const VALUES = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 20000 };
+const CENTER = new Set(['d4', 'e4', 'd5', 'e5', 'c4', 'f4', 'c3', 'f3', 'c6', 'f6', 'd3', 'e3', 'd6', 'e6']);
 
-button,
-input,
-select {
-  font: inherit;
-}
+const botProfiles = {
+  Alexander: { bias: 'aggressive', depth: 2, style: 'attacks the center and looks for forcing tactics.' },
+  Cleopatra: { bias: 'positional', depth: 2, style: 'values central control, development, and king safety.' },
+  'Sun Tzu': { bias: 'balanced', depth: 2, style: 'builds steady pressure and prefers flexible moves.' },
+  Machiavelli: { bias: 'trap', depth: 2, style: 'looks for tactical tricks and punishes loose pieces.' },
+  Nero: { bias: 'risky', depth: 2, style: 'seeks sharp attacks and initiative.' },
+};
 
-button {
-  cursor: pointer;
-}
+function evaluate(game, perspective, profile) {
+  if (game.isCheckmate()) return game.turn() === perspective ? -100000 : 100000;
+  if (game.isDraw()) return 0;
 
-.app-shell {
-  width: min(1320px, 96vw);
-  margin: 0 auto;
-  padding: 32px 0 40px;
-}
-
-.topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  margin-bottom: 28px;
-}
-
-.eyebrow {
-  margin: 0;
-  font-size: 0.74rem;
-  opacity: 0.8;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-}
-
-h1 {
-  margin: 6px 0 0;
-  font-size: clamp(2rem, 4vw, 3.5rem);
-}
-
-.top-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.top-actions input,
-.top-actions button,
-.panel button,
-.panel select {
-  border-radius: 10px;
-  border: 1px solid rgba(148, 163, 184, 0.35);
-  padding: 10px 14px;
-  background: rgba(15, 23, 42, 0.8);
-  color: white;
-}
-
-.top-actions button,
-.panel button,
-.primary {
-  background: linear-gradient(135deg, #2563eb, #7c3aed);
-  border: none;
-  transition: transform 0.15s ease;
-}
-
-.top-actions button:hover,
-.panel button:hover,
-.primary:hover {
-  transform: translateY(-1px);
-}
-
-.main-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(260px, 0.7fr);
-  gap: 20px;
-}
-
-.board-panel,
-.panel {
-  background: rgba(15, 23, 42, 0.7);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 20px;
-  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.25);
-}
-
-.board-panel {
-  padding: 18px;
-}
-
-.board-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 0 8px 16px;
-  color: #dbeafe;
-}
-
-.board-grid {
-  display: grid;
-  grid-template-columns: repeat(8, minmax(0, 1fr));
-  width: min(78vw, 760px);
-  aspect-ratio: 1;
-  border-radius: 16px;
-  overflow: hidden;
-  border: 10px solid rgba(30, 41, 59, 0.9);
-  box-shadow: inset 0 0 0 2px rgba(148, 163, 184, 0.2);
-}
-
-.square {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 0;
-  min-height: 0;
-  border: none;
-  font-size: clamp(1.4rem, 2vw, 2.2rem);
-  transition: filter 0.15s ease;
-}
-
-.square.light {
-  background: #f0d9b5;
-}
-
-.square.dark {
-  background: #b58863;
-}
-
-.square.selected {
-  outline: 3px solid rgba(37, 99, 235, 0.9);
-  outline-offset: -3px;
-}
-
-.square:hover {
-  filter: brightness(1.05);
-}
-
-.piece {
-  display: inline-block;
-  transform: translateY(-2px);
-}
-
-.square-label {
-  position: absolute;
-  right: 6px;
-  bottom: 4px;
-  font-size: 0.58rem;
-  opacity: 0.45;
-  color: rgba(15, 23, 42, 0.7);
-}
-
-.sidebar {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-}
-
-.panel {
-  padding: 18px;
-}
-
-.panel h3 {
-  margin-top: 0;
-  margin-bottom: 12px;
-}
-
-.panel select {
-  width: 100%;
-  margin-bottom: 12px;
-}
-
-.panel button {
-  width: 100%;
-  margin-top: 8px;
-}
-
-.analysis-list {
-  margin: 0;
-  padding-left: 18px;
-  display: grid;
-  gap: 8px;
-}
-
-@media (max-width: 980px) {
-  .main-layout {
-    grid-template-columns: 1fr;
+  const board = game.board();
+  let score = 0;
+  for (let row = 0; row < 8; row += 1) {
+    for (let col = 0; col < 8; col += 1) {
+      const piece = board[row][col];
+      if (!piece) continue;
+      const square = `${String.fromCharCode(97 + col)}${8 - row}`;
+      const sign = piece.color === perspective ? 1 : -1;
+      score += sign * VALUES[piece.type];
+      if (CENTER.has(square)) score += sign * (profile.bias === 'positional' ? 18 : 10);
+      if (piece.type === 'p') {
+        const advance = piece.color === 'w' ? 6 - row : row - 1;
+        score += sign * advance * 4;
+      }
+    }
   }
-
-  .board-grid {
-    width: min(90vw, 640px);
-  }
+  return score;
 }
+
+function search(game, depth, alpha, beta, perspective, profile) {
+  if (depth <= 0 || game.isGameOver()) return evaluate(game, perspective, profile);
+  const moves = game.moves({ verbose: true });
+  const maximizing = game.turn() === perspective;
+  let best = maximizing ? -Infinity : Infinity;
+
+  for (const move of moves) {
+    const next = new Chess(game.fen());
+    next.move({ from: move.from, to: move.to, promotion: move.promotion || 'q' });
+    let score = search(next, depth - 1, alpha, beta, perspective, profile);
+    if (move.captured) score += (maximizing ? 1 : -1) * (VALUES[move.captured] || 0) * 0.1;
+    if (move.san.includes('+')) score += maximizing ? 12 : -12;
+    if (maximizing) {
+      best = Math.max(best, score);
+      alpha = Math.max(alpha, best);
+    } else {
+      best = Math.min(best, score);
+      beta = Math.min(beta, best);
+    }
+    if (beta <= alpha) break;
+  }
+  return best;
+}
+
+function chooseBotMove(game, botName = 'Alexander') {
+  const profile = botProfiles[botName] || botProfiles.Alexander;
+  const moves = game.moves({ verbose: true });
+  if (!moves.length) return null;
+  const perspective = game.turn();
+  let bestMove = moves[0];
+  let bestScore = -Infinity;
+
+  for (const move of moves) {
+    const next = new Chess(game.fen());
+    next.move({ from: move.from, to: move.to, promotion: move.promotion || 'q' });
+    let score = search(next, profile.depth - 1, -Infinity, Infinity, perspective, profile);
+    if (move.captured) score += (VALUES[move.captured] || 0) * 0.12;
+    if (move.san.includes('+')) score += 15;
+    if (CENTER.has(move.to)) score += profile.bias === 'positional' ? 14 : 8;
+    if (profile.bias === 'aggressive' && move.to[1] > '4') score += 5;
+    if (profile.bias === 'risky' && move.captured) score += 8;
+    if (score > bestScore) {
+      bestScore = score;
+      bestMove = move;
+    }
+  }
+  return bestMove;
+}
+
+function getAnalysis(game, botName = 'Alexander') {
+  const profile = botProfiles[botName] || botProfiles.Alexander;
+  const perspective = game.turn();
+  const ranked = game.moves({ verbose: true }).map((move) => {
+    const next = new Chess(game.fen());
+    next.move({ from: move.from, to: move.to, promotion: move.promotion || 'q' });
+    const score = search(next, 1, -Infinity, Infinity, perspective, profile);
+    return { move, score };
+  }).sort((a, b) => b.score - a.score).slice(0, 3);
+
+  return {
+    summary: profile.style,
+    moves: ranked.map(({ move, score }) => ({
+      san: move.san,
+      from: move.from,
+      to: move.to,
+      reason: score > 100 ? 'Wins material or creates a strong threat.' : 'A solid candidate based on the current position.',
+    })),
+  };
+}
+
+module.exports = { botProfiles, chooseBotMove, getAnalysis };

@@ -1,168 +1,25 @@
-const express = require('express');
-const http = require('http');
-const path = require('path');
-const { Server } = require('socket.io');
-const { Chess } = require('chess.js');
-const { chooseBotMove, getAnalysis } = require('./botEngine');
+# Chess Arena
 
-const app = express();
-const server = http.createServer(app);
-const io = new Server(server, {
-  cors: {
-    origin: '*',
-  },
-});
+A small Chess Arena prototype with a React/Vite board, a Socket.IO game server, a simple search-based bot, and a lobby/matchmaking interface.
 
-const PORT = process.env.PORT || 3001;
-const rooms = new Map();
+## Run locally
 
-function createRoom(roomId, whitePlayerName, blackPlayerName = 'Guest') {
-  const room = {
-    id: roomId,
-    game: new Chess(),
-    players: {
-      white: whitePlayerName,
-      black: blackPlayerName,
-    },
-    bot: null,
-  };
+1. Install Node.js 18 or newer.
+2. Clone or open this repository in GitHub Codespaces.
+3. In the terminal, run:
 
-  rooms.set(roomId, room);
-  return room;
-}
+   ```bash
+   npm install
+   npm run dev
+   ```
 
-function formatRoomState(room) {
-  const winner = (() => {
-    if (room.game.isCheckmate()) {
-      return room.game.turn() === 'w' ? 'Black wins' : 'White wins';
-    }
+4. Open the Vite port `5173` in the Ports tab (Codespaces may show a pop-up to open it).
+5. Choose **Play Against Bot** (or select a bot in the board view and press **Start Bot Match**). Click one of your white pieces, then its destination square to move. The bot responds as Black.
 
-    if (room.game.isDraw()) {
-      return 'Draw';
-    }
+The development server starts the Vite client on port 5173 and the Socket.IO server on port 3001. Multiplayer is a prototype: the server keeps games in memory, so rooms reset when it restarts. Quick Match only pairs players connected to the same running server instance. The rating/profile values shown in the UI are demo data, not persisted ratings.
 
-    return null;
-  })();
+## Build
 
-  return {
-    id: room.id,
-    fen: room.game.fen(),
-    players: room.players,
-    turn: room.game.turn(),
-    history: room.game.history({ verbose: true }),
-    status: winner || (room.game.isCheck() ? 'Check!' : 'Game in progress'),
-    winner,
-  };
-}
-
-io.on('connection', (socket) => {
-  socket.on('create-room', ({ roomId, playerName }) => {
-    const room = createRoom(roomId, playerName);
-    socket.join(roomId);
-    io.to(roomId).emit('game-state', formatRoomState(room));
-    io.to(roomId).emit('status-message', `${playerName} created room ${roomId}.`);
-  });
-
-  socket.on('join-room', ({ roomId, playerName }) => {
-    const room = rooms.get(roomId);
-
-    if (!room) {
-      socket.emit('status-message', 'Room does not exist.');
-      return;
-    }
-
-    room.players.black = playerName;
-    socket.join(roomId);
-    io.to(roomId).emit('game-state', formatRoomState(room));
-    io.to(roomId).emit('status-message', `${playerName} joined ${roomId}.`);
-  });
-
-  socket.on('start-bot-match', ({ roomId, playerName, botName }) => {
-    const room = createRoom(roomId, playerName, botName);
-    room.bot = { name: botName, side: 'b' };
-    socket.join(roomId);
-    io.to(roomId).emit('game-state', formatRoomState(room));
-    io.to(roomId).emit('status-message', `${playerName} started a match against ${botName}.`);
-  });
-
-  socket.on('make-move', ({ roomId, move }) => {
-    const room = rooms.get(roomId);
-
-    if (!room) {
-      socket.emit('status-message', 'Room not found.');
-      return;
-    }
-
-    const isBotTurn = room.bot && room.game.turn() === room.bot.side;
-    if (isBotTurn) {
-      socket.emit('status-message', 'The bot is thinking. Please wait.');
-      return;
-    }
-
-    try {
-      const madeMove = room.game.move({
-        from: move.from,
-        to: move.to,
-        promotion: 'q',
-      });
-
-      if (!madeMove) {
-        socket.emit('status-message', 'Illegal move. Try another square.');
-        return;
-      }
-
-      io.to(roomId).emit('game-state', formatRoomState(room));
-
-      if (room.bot && room.game.turn() === room.bot.side) {
-        setTimeout(() => {
-          const botMove = chooseBotMove(room.game, room.bot.name);
-
-          if (!botMove) {
-            return;
-          }
-
-          room.game.move({
-            from: botMove.from,
-            to: botMove.to,
-            promotion: 'q',
-          });
-
-          io.to(roomId).emit('game-state', formatRoomState(room));
-          io.to(roomId).emit('status-message', `${room.bot.name} played ${botMove.from} to ${botMove.to}.`);
-        }, 700);
-      }
-    } catch (error) {
-      socket.emit('status-message', 'Illegal move. Try another square.');
-    }
-  });
-
-  socket.on('request-analysis', ({ roomId, botName }) => {
-    const room = rooms.get(roomId);
-
-    if (!room) {
-      socket.emit('status-message', 'Room not found.');
-      return;
-    }
-
-    const analysis = getAnalysis(room.game, botName || 'Alexander');
-    socket.emit('analysis-result', analysis);
-  });
-});
-
-app.use(express.json());
-
-app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, message: 'Chess Arena server is running.' });
-});
-
-const distPath = path.join(__dirname, '../dist');
-app.use(express.static(distPath));
-
-app.get('*', (_req, res) => {
-  const indexPath = path.join(distPath, 'index.html');
-  res.sendFile(indexPath);
-});
-
-server.listen(PORT, () => {
-  console.log(`Chess Arena server running on http://localhost:${PORT}`);
-});
+```bash
+npm run build
+```
