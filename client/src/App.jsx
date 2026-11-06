@@ -19,45 +19,37 @@ function App() {
     fen: new Chess().fen(),
     players: { white: 'White', black: 'Black' },
     turn: 'w',
-    status: 'Choose a room or start a bot match.',
+    status: 'Select a bot and start a match.',
     history: [],
   });
   const [analysis, setAnalysis] = useState([]);
-  const [message, setMessage] = useState('Welcome to Chess Arena.');
+  const [message, setMessage] = useState('Connected to Chess Arena.');
 
   useEffect(() => {
     const s = io({ autoConnect: true });
 
-    s.on('connect', () => {
-      setMessage('Connected to Chess Arena server.');
-    });
-
+    s.on('connect', () => setMessage('Connected to Chess Arena server.'));
     s.on('game-state', (payload) => {
       setGameState(payload);
       setMessage(payload.status || 'Game updated.');
     });
-
     s.on('analysis-result', (payload) => {
       setAnalysis(payload.moves || []);
       setMessage(payload.summary || 'Analysis ready.');
     });
-
     s.on('status-message', (text) => setMessage(text));
 
     setSocket(s);
-
     return () => s.disconnect();
   }, []);
 
-  const board = useMemo(() => {
+  const boardMatrix = useMemo(() => {
     const chess = new Chess(gameState.fen);
     const rows = chess.board();
+
     return rows.map((row, rowIndex) =>
       row.map((piece, colIndex) => {
-        if (!piece) {
-          return null;
-        }
-
+        if (!piece) return null;
         const square = `${FILES[colIndex]}${8 - rowIndex}`;
         return { piece, square };
       })
@@ -66,7 +58,7 @@ function App() {
 
   const createRoom = () => {
     if (!socket) return;
-    const generatedRoom = `room-${Math.random().toString(36).slice(2, 6)}`;
+    const generatedRoom = `room-${Math.random().toString(36).slice(2, 7)}`;
     setRoomId(generatedRoom);
     socket.emit('create-room', { roomId: generatedRoom, playerName });
   };
@@ -78,7 +70,7 @@ function App() {
 
   const startBotMatch = () => {
     if (!socket) return;
-    const generatedRoom = `bot-${Math.random().toString(36).slice(2, 6)}`;
+    const generatedRoom = `bot-${Math.random().toString(36).slice(2, 7)}`;
     setRoomId(generatedRoom);
     socket.emit('start-bot-match', {
       roomId: generatedRoom,
@@ -89,19 +81,13 @@ function App() {
 
   const handleSquareClick = (square) => {
     if (!socket || !roomId) return;
-
     const chess = new Chess(gameState.fen);
     const piece = chess.get(square);
 
     if (selectedSquare) {
-      const legalMove = {
-        from: selectedSquare,
-        to: square,
-      };
-
       socket.emit('make-move', {
         roomId,
-        move: legalMove,
+        move: { from: selectedSquare, to: square },
       });
       setSelectedSquare(null);
       return;
@@ -126,7 +112,6 @@ function App() {
         const rank = 8 - row;
         const square = `${file}${rank}`;
         const piece = new Chess(gameState.fen).get(square);
-
         const isLight = (row + col) % 2 === 0;
         const isSelected = selectedSquare === square;
 
@@ -137,11 +122,7 @@ function App() {
             className={`square ${isLight ? 'light' : 'dark'} ${isSelected ? 'selected' : ''}`}
             onClick={() => handleSquareClick(square)}
           >
-            {piece ? (
-              <span className={`piece ${piece.color}`}>
-                {PIECE_MAP[piece.color][piece.type]}
-              </span>
-            ) : null}
+            {piece ? <span className={`piece ${piece.color}`}>{PIECE_MAP[piece.color][piece.type]}</span> : null}
             <span className="square-label">{square}</span>
           </button>
         );
@@ -154,10 +135,21 @@ function App() {
   return (
     <div className="app-shell">
       <header className="topbar">
-        <div>
-          <p className="eyebrow">Strategy board</p>
-          <h1>Chess Arena</h1>
+        <div className="brand-block">
+          <div className="brand-mark">♟</div>
+          <div>
+            <p className="eyebrow">Strategy board</p>
+            <h1>Chess Arena</h1>
+          </div>
         </div>
+
+        <nav className="nav-links">
+          <span>Play</span>
+          <span>Learn</span>
+          <span>Analysis</span>
+          <span>Bot Arena</span>
+        </nav>
+
         <div className="top-actions">
           <input
             value={playerName}
@@ -169,25 +161,52 @@ function App() {
         </div>
       </header>
 
+      <section className="hero-panel">
+        <div>
+          <p className="hero-tag">Live Bot Battle</p>
+          <h2>Smarter AI opponents with distinct playing styles</h2>
+        </div>
+        <div className="hero-metrics">
+          <div>
+            <strong>Bot IQ</strong>
+            <span>Adaptive</span>
+          </div>
+          <div>
+            <strong>Style</strong>
+            <span>Dynamic</span>
+          </div>
+          <div>
+            <strong>Analysis</strong>
+            <span>Live</span>
+          </div>
+        </div>
+      </section>
+
       <main className="main-layout">
         <section className="board-panel">
           <div className="board-toolbar">
             <div>
-              <span>Room:</span>
-              <strong> {roomId || 'none'}</strong>
+              <span>Room</span>
+              <strong>{roomId || 'none'}</strong>
             </div>
             <div>
-              <span>Turn:</span>
-              <strong> {gameState.turn === 'w' ? 'White' : 'Black'}</strong>
+              <span>Turn</span>
+              <strong>{gameState.turn === 'w' ? 'White' : 'Black'}</strong>
             </div>
           </div>
 
-          <div className="board-grid">{renderBoard()}</div>
+          <div className="board-wrapper">
+            <div className="board-grid">{renderBoard()}</div>
+          </div>
         </section>
 
         <aside className="sidebar">
-          <div className="panel">
-            <h3>Bot match</h3>
+          <div className="panel bot-panel">
+            <div className="panel-header">
+              <h3>Bot Match</h3>
+              <span className="pill">AI</span>
+            </div>
+
             <select value={botName} onChange={(e) => setBotName(e.target.value)}>
               <option value="Alexander">Alexander</option>
               <option value="Cleopatra">Cleopatra</option>
@@ -195,12 +214,16 @@ function App() {
               <option value="Machiavelli">Machiavelli</option>
               <option value="Nero">Nero</option>
             </select>
+
             <button className="primary" onClick={startBotMatch}>Start Bot Match</button>
             <button onClick={requestAnalysis}>Analyze Position</button>
           </div>
 
           <div className="panel">
-            <h3>Game status</h3>
+            <div className="panel-header">
+              <h3>Game Status</h3>
+              <span className="pill live">Live</span>
+            </div>
             <p>{message}</p>
             <small>
               White: {gameState.players?.white || 'White'}
@@ -210,14 +233,18 @@ function App() {
           </div>
 
           <div className="panel">
-            <h3>Suggested next moves</h3>
+            <div className="panel-header">
+              <h3>Next Best Ideas</h3>
+            </div>
+
             {analysis.length === 0 ? (
-              <p>No analysis yet. Ask for a position review.</p>
+              <p>No analysis yet. Request a review.</p>
             ) : (
               <ul className="analysis-list">
                 {analysis.map((move, index) => (
                   <li key={`${move.from}-${move.to}-${index}`}>
-                    <strong>{move.san}</strong> — {move.reason}
+                    <strong>{move.san}</strong>
+                    <span>{move.reason}</span>
                   </li>
                 ))}
               </ul>
